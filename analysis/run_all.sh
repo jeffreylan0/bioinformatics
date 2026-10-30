@@ -23,9 +23,15 @@ python3 analysis/expression_matched_test.py \
   "${OUT}/go_enrichment_all.tsv" "${ROOT}/1m-deseq.tabular" \
   "${OUT}/gene2go_matrix.npz" "${OUT}/go_enrichment_exprmatched.tsv" 5000
 
-# 4. pick the terms to plot (all BP, top 5 CC), then draw the vector figure
+# 4. the retina/vision subgraph of GO: curated roots plus their descendants
+python3 analysis/retina_go_set.py \
+  "${REF}/go-basic.obo" "${OUT}/retina_go_terms.tsv"
+
+# 5. pick the terms to plot (top 8 BP, top 5 CC among retina terms), then draw
 python3 analysis/select_terms.py \
-  "${OUT}/go_enrichment_exprmatched.tsv" "${OUT}/go_terms_plot.tsv" "BP:8,CC:5"
+  "${OUT}/go_enrichment_exprmatched.tsv" "${OUT}/go_terms_plot.tsv" \
+  "BP:8,CC:5" "${OUT}/retina_go_terms.tsv"
+# 6. the figure
 python3 analysis/plot_go_bubble.py \
   "${OUT}/go_terms_plot.tsv" "${OUT}/go_bubble_plot"
 

@@ -3,7 +3,8 @@
 Production figure: GO over-representation in the 1-month Ddx41 cKO retina.
 
 Biological-process and cellular-component terms share one plot per direction;
-the ontology is carried on the y-axis as a bracketed group label.
+the ontology is carried on the y-axis as a bracketed group label. The panel
+count follows the data, so a single enriched direction yields a single panel.
 
 Writes vector output only (SVG with live, editable text + PDF with embedded
 TrueType fonts).  Set GO_BUBBLE_PNG=1 to also drop a raster copy for proofing.
@@ -54,7 +55,8 @@ plt.rcParams.update({
 d = pd.read_csv(TSV, sep="\t")
 d["neglog10FDR"] = -np.log10(d.FDR)
 
-DIRS = ["Down in cKO", "Up in cKO"]
+# only the directions actually present, in a fixed order
+DIRS = [x for x in ("Down in cKO", "Up in cKO") if x in set(d.direction)]
 NS_ORDER = [ns for ns in ("BP", "CC") if ns in set(d.ontology)]   # top to bottom
 NS_FULL = {"BP": "Biological process", "CC": "Cellular component"}
 
@@ -75,16 +77,25 @@ Y_MAX = n_rows + BAND_GAP * (len(NS_ORDER) - 1) - 1
 norm = Normalize(vmin=d.neglog10FDR.min(), vmax=d.neglog10FDR.max())
 xmax = d.fold_enrichment.max() * 1.18
 
+# Geometry is set in inches and converted, so the figure stays correctly
+# proportioned whether one direction or both are plotted.
 ROW_IN = 0.52                      # inches per term row (two-line labels)
-HEADER_IN, FOOTER_IN = 1.70, 1.00
+HEADER_IN, FOOTER_IN = 1.85, 1.35
+LEFT_IN = 3.10                     # bracket + rotated ontology label + term names
+GAP_IN = 3.10                      # between columns: holds the next panel's names
+RIGHT_IN = 1.30                    # colour bar, its ticks and label
+PANEL_W_IN = 5.00 if len(DIRS) == 1 else 3.30
+
+n_col = len(DIRS)
 FIG_H = ROW_IN * (n_rows + BAND_GAP) + HEADER_IN + FOOTER_IN
-FIG_W = 14.5
-LEFT, RIGHT, WSPACE = 0.215, 0.90, 0.95
+FIG_W = LEFT_IN + n_col * PANEL_W_IN + (n_col - 1) * GAP_IN + RIGHT_IN
 
 fig = plt.figure(figsize=(FIG_W, FIG_H))
-gs = fig.add_gridspec(1, 2, left=LEFT, right=RIGHT,
+gs = fig.add_gridspec(1, n_col,
+                      left=LEFT_IN / FIG_W,
+                      right=(FIG_W - RIGHT_IN) / FIG_W,
                       top=1 - HEADER_IN / FIG_H, bottom=FOOTER_IN / FIG_H,
-                      wspace=WSPACE)
+                      wspace=GAP_IN / PANEL_W_IN if n_col > 1 else 0.0)
 
 axes, label_artists = [], []
 for c, direction in enumerate(DIRS):
@@ -155,7 +166,8 @@ for ax, labels in zip(axes, label_artists):
 # mesh that is rasterised by default, and un-rasterising it leaves hairline
 # seams between the quads in PDF/SVG. Overlapping rectangles cannot seam, and
 # keep the figure fully vector.
-cax = fig.add_axes([0.925, 0.34, 0.0125, 0.30])
+cax = fig.add_axes([(FIG_W - RIGHT_IN + 0.26) / FIG_W, 0.34,
+                    0.16 / FIG_W, 0.30])
 edges = np.linspace(norm.vmin, norm.vmax, 257)
 for lo, hi in zip(edges[:-1], edges[1:]):
     h = hi - lo
@@ -173,28 +185,34 @@ for sp in cax.spines.values():
 cax.tick_params(axis="y", labelsize=8.5, colors=MUTED, length=3, color=BASELINE)
 
 # --- size legend --------------------------------------------------------------
-ticks = [10, 30, 60, 100]
+lo_n, hi_n = int(d.n_DE_in_term.min()), int(d.n_DE_in_term.max())
+ticks = [t for t in (5, 10, 25, 50, 75, 100, 150) if lo_n <= t <= hi_n] or [hi_n]
 handles = [Line2D([], [], marker="o", linestyle="none",
                   markersize=np.sqrt(t * AREA_PER_GENE),
                   markerfacecolor=MUTED, markeredgecolor=SURFACE,
                   markeredgewidth=0.9, label=str(t)) for t in ticks]
 leg = fig.legend(handles=handles, title="DE genes in term",
-                 loc="lower center", bbox_to_anchor=(0.55, 0.004),
+                 loc="lower center", bbox_to_anchor=(0.55, 0.002),
                  ncol=len(ticks), frameon=False, handletextpad=0.6,
                  columnspacing=2.6, labelspacing=0.9, borderpad=0.8,
                  fontsize=9, labelcolor=INK_2)
 leg.get_title().set_fontsize(9)
 leg.get_title().set_color(INK_2)
 
-fig.suptitle("GO enrichment in the 1-month Ddx41 conditional-knockout retina",
-             x=0.052, y=1 - 0.40 / FIG_H, ha="left", fontsize=15, color=INK,
+TITLE_X = 0.52 / FIG_W
+fig.suptitle("Retina and vision GO enrichment in the 1-month Ddx41 "
+             "conditional knockout",
+             x=TITLE_X, y=1 - 0.42 / FIG_H, ha="left", fontsize=14, color=INK,
              fontweight="bold")
-fig.text(0.052, 1 - 0.70 / FIG_H,
+fig.text(TITLE_X, 1 - 0.72 / FIG_H,
          "CHX10-Cre; Ddx41 fl/fl vs. littermate control, n = 3 per genotype. "
-         "Over-representation among DESeq2 padj < 0.05 genes, against the 17,444 "
-         "tested GO-annotated genes.\nTerms pass FDR < 0.05 in both a hypergeometric "
-         "and an expression-matched permutation test, are de-duplicated by gene "
-         "overlap, and are the top 8 (BP) and 5 (CC) per direction.",
+         "Restricted to the eye/vision part of the GO DAG (22 curated roots and their\n"
+         "descendants), so membership follows the ontology, not the wording of a term "
+         "name. Over-representation among DESeq2 padj < 0.05 genes, against\n"
+         "the 17,444 tested GO-annotated genes; terms pass FDR < 0.05 in both a "
+         "hypergeometric and an expression-matched permutation test. No retina\n"
+         "term was enriched among down-regulated genes (22 tested, best FDR = 0.11), "
+         "so only the up direction is shown.",
          ha="left", va="top", fontsize=8.8, color=MUTED, linespacing=1.6)
 
 fig.savefig(f"{OUT_BASE}.svg")
