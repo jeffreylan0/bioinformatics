@@ -31,8 +31,15 @@ python3 analysis/retina_go_set.py \
 python3 analysis/select_terms.py \
   "${OUT}/go_enrichment_exprmatched.tsv" "${OUT}/go_terms_plot.tsv" \
   "BP:8,CC:5" "${OUT}/retina_go_terms.tsv"
-# 6. the figure
+# 6. the GO figure
 python3 analysis/plot_go_bubble.py \
   "${OUT}/go_terms_plot.tsv" "${OUT}/go_bubble_plot"
 
-echo "done -> ${OUT}/go_bubble_plot.svg + .pdf"
+# 7. why the photoreceptor terms rise: cell-population composition, then the
+#    gene-level detail behind it
+python3 analysis/plot_composition.py \
+  "${ROOT}/1m-counts.tabular" "${ROOT}/1m-deseq.tabular" "${OUT}/cell_composition"
+python3 analysis/plot_marker_genes.py \
+  "${ROOT}/1m-deseq.tabular" "${OUT}/marker_genes"
+
+echo "done -> ${OUT}/{go_bubble_plot,cell_composition,marker_genes}.svg + .pdf"

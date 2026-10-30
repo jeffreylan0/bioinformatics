@@ -7,7 +7,7 @@ the ontology is carried on the y-axis as a bracketed group label. The panel
 count follows the data, so a single enriched direction yields a single panel.
 
 Writes vector output only (SVG with live, editable text + PDF with embedded
-TrueType fonts).  Set GO_BUBBLE_PNG=1 to also drop a raster copy for proofing.
+TrueType fonts).  Set FIGURE_PNG=1 to also drop a raster copy for proofing.
 """
 import os
 import sys
@@ -258,7 +258,7 @@ fig.text(TITLE_X, 1 - 0.72 / FIG_H,
 fig.savefig(f"{OUT_BASE}.svg")
 fig.savefig(f"{OUT_BASE}.pdf")
 written = [f"{OUT_BASE}.svg", f"{OUT_BASE}.pdf"]
-if os.environ.get("GO_BUBBLE_PNG"):
+if os.environ.get("FIGURE_PNG"):
     fig.savefig(f"{OUT_BASE}.png", dpi=300)
     written.append(f"{OUT_BASE}.png")
 print("wrote " + ", ".join(written))

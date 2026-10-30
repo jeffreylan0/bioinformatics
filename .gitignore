@@ -6,3 +6,6 @@ results/gene2go_matrix.npz
 results/*.tsv
 # raster proofs (GO_BUBBLE_PNG=1) are for checking layout, not for delivery
 results/*.png
+# python bytecode from the shared figure modules
+__pycache__/
+*.pyc
