@@ -23,10 +23,10 @@ python3 analysis/expression_matched_test.py \
   "${OUT}/go_enrichment_all.tsv" "${ROOT}/1m-deseq.tabular" \
   "${OUT}/gene2go_matrix.npz" "${OUT}/go_enrichment_exprmatched.tsv" 5000
 
-# 4. pick the terms to plot, then draw
+# 4. pick the terms to plot (all BP, top 5 CC), then draw the vector figure
 python3 analysis/select_terms.py \
-  "${OUT}/go_enrichment_exprmatched.tsv" "${OUT}/go_terms_plot.tsv" 8
+  "${OUT}/go_enrichment_exprmatched.tsv" "${OUT}/go_terms_plot.tsv" "BP:8,CC:5"
 python3 analysis/plot_go_bubble.py \
   "${OUT}/go_terms_plot.tsv" "${OUT}/go_bubble_plot"
 
-echo "done -> ${OUT}/go_bubble_plot.png"
+echo "done -> ${OUT}/go_bubble_plot.svg + .pdf"

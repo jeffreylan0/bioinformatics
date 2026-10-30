@@ -4,7 +4,10 @@ import sys
 import pandas as pd
 
 IN, OUT = sys.argv[1], sys.argv[2]
-TOP_N = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+# how many terms to keep per ontology, e.g. "BP:8,CC:5" -- ontologies left out
+# of the spec are dropped entirely
+SPEC = sys.argv[3] if len(sys.argv) > 3 else "BP:8,CC:5"
+TOP_N = {k: int(v) for k, v in (p.split(":") for p in SPEC.split(","))}
 FDR_CUT = 0.05
 OVERLAP_CUT = 0.5     # drop a term sharing this much of its DE genes with a stronger one
 # GO_ID breaks ties so the selection is reproducible when p-values are identical
@@ -16,6 +19,8 @@ d["gene_set"] = d.genes.str.split(";").apply(set)
 
 kept = []
 for (direction, ns), sub in d.groupby(["direction", "ontology"]):
+    if ns not in TOP_N:
+        continue
     chosen = []
     for _, row in sub.sort_values(["pvalue", "FDR", "GO_ID"]).iterrows():
         g = row.gene_set
@@ -23,7 +28,7 @@ for (direction, ns), sub in d.groupby(["direction", "ontology"]):
                for c in chosen):
             continue
         chosen.append(row)
-        if len(chosen) == TOP_N:
+        if len(chosen) == TOP_N[ns]:
             break
     kept.extend(chosen)
 
