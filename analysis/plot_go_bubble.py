@@ -54,6 +54,9 @@ plt.rcParams.update({
 
 d = pd.read_csv(TSV, sep="\t")
 d["neglog10FDR"] = -np.log10(d.FDR)
+if "significant" not in d:
+    d["significant"] = True
+d["significant"] = d.significant.astype(bool)
 
 # only the directions actually present, in a fixed order
 DIRS = [x for x in ("Down in cKO", "Up in cKO") if x in set(d.direction)]
@@ -74,7 +77,11 @@ for ns in NS_ORDER:
     cursor -= band_n[ns] + BAND_GAP
 Y_MAX = n_rows + BAND_GAP * (len(NS_ORDER) - 1) - 1
 
-norm = Normalize(vmin=d.neglog10FDR.min(), vmax=d.neglog10FDR.max())
+# Colour encodes FDR for the terms that pass it. Terms shown only as nominal
+# candidates are drawn hollow in a neutral grey and left out of the scale, so a
+# pale bubble never has to mean "not significant".
+sig_only = d[d.significant]
+norm = Normalize(vmin=sig_only.neglog10FDR.min(), vmax=sig_only.neglog10FDR.max())
 xmax = d.fold_enrichment.max() * 1.18
 
 # Geometry is set in inches and converted, so the figure stays correctly
@@ -84,7 +91,7 @@ HEADER_IN, FOOTER_IN = 1.85, 1.35
 LEFT_IN = 3.10                     # bracket + rotated ontology label + term names
 GAP_IN = 3.10                      # between columns: holds the next panel's names
 RIGHT_IN = 1.30                    # colour bar, its ticks and label
-PANEL_W_IN = 5.00 if len(DIRS) == 1 else 3.30
+PANEL_W_IN = 5.00 if len(DIRS) == 1 else 3.60
 
 n_col = len(DIRS)
 FIG_H = ROW_IN * (n_rows + BAND_GAP) + HEADER_IN + FOOTER_IN
@@ -109,10 +116,22 @@ for c, direction in enumerate(DIRS):
                .sort_values("fold_enrichment", ascending=False))
         y = band_top[ns] - np.arange(len(sub))     # highest enrichment on top
 
-        ax.scatter(sub.fold_enrichment, y,
-                   s=sub.n_DE_in_term * AREA_PER_GENE,
-                   c=sub.neglog10FDR, cmap=CMAP, norm=norm,
+        if not len(sub):
+            mid = band_top[ns] - 0.5 * (band_n[ns] - 1)
+            ax.text(0.5, mid, "no term above the display threshold",
+                    transform=ax.get_yaxis_transform(), ha="center",
+                    va="center", fontsize=8.5, color=MUTED)
+            continue
+
+        hit = sub.significant.values
+        ax.scatter(sub.fold_enrichment[hit], y[hit],
+                   s=sub.n_DE_in_term[hit] * AREA_PER_GENE,
+                   c=sub.neglog10FDR[hit], cmap=CMAP, norm=norm,
                    linewidths=0.9, edgecolors=SURFACE, zorder=3)
+        ax.scatter(sub.fold_enrichment[~hit], y[~hit],
+                   s=sub.n_DE_in_term[~hit] * AREA_PER_GENE,
+                   facecolors="none", edgecolors=MUTED, linewidths=1.5,
+                   zorder=3)
 
         # term name with its GO accession set underneath, both right-aligned
         for yi, term, go_id in zip(y, sub.term, sub.GO_ID):
@@ -191,13 +210,32 @@ handles = [Line2D([], [], marker="o", linestyle="none",
                   markersize=np.sqrt(t * AREA_PER_GENE),
                   markerfacecolor=MUTED, markeredgecolor=SURFACE,
                   markeredgewidth=0.9, label=str(t)) for t in ticks]
+size_anchor = (0.55, 0.002) if d.significant.all() else (0.38, 0.002)
 leg = fig.legend(handles=handles, title="DE genes in term",
-                 loc="lower center", bbox_to_anchor=(0.55, 0.002),
+                 loc="lower center", bbox_to_anchor=size_anchor,
                  ncol=len(ticks), frameon=False, handletextpad=0.6,
                  columnspacing=2.6, labelspacing=0.9, borderpad=0.8,
                  fontsize=9, labelcolor=INK_2)
 leg.get_title().set_fontsize(9)
 leg.get_title().set_color(INK_2)
+
+if not d.significant.all():
+    style = [
+        Line2D([], [], marker="o", linestyle="none", markersize=11,
+               markerfacecolor=CMAP(0.62), markeredgecolor=SURFACE,
+               markeredgewidth=0.9, label="FDR < 0.05 (both tests)"),
+        Line2D([], [], marker="o", linestyle="none", markersize=11,
+               markerfacecolor="none", markeredgecolor=MUTED,
+               markeredgewidth=1.5, label="nominal only, p < 0.10"),
+    ]
+    leg2 = fig.legend(handles=style, title="Significance",
+                      loc="lower center", bbox_to_anchor=(0.74, 0.002),
+                      ncol=2, frameon=False, handletextpad=0.6,
+                      columnspacing=2.2, labelspacing=0.9, borderpad=0.8,
+                      fontsize=9, labelcolor=INK_2)
+    leg2.get_title().set_fontsize(9)
+    leg2.get_title().set_color(INK_2)
+    fig.add_artist(leg)
 
 TITLE_X = 0.52 / FIG_W
 fig.suptitle("Retina and vision GO enrichment in the 1-month Ddx41 "
@@ -206,13 +244,15 @@ fig.suptitle("Retina and vision GO enrichment in the 1-month Ddx41 "
              fontweight="bold")
 fig.text(TITLE_X, 1 - 0.72 / FIG_H,
          "CHX10-Cre; Ddx41 fl/fl vs. littermate control, n = 3 per genotype. "
-         "Restricted to the eye/vision part of the GO DAG (22 curated roots and their\n"
-         "descendants), so membership follows the ontology, not the wording of a term "
-         "name. Over-representation among DESeq2 padj < 0.05 genes, against\n"
-         "the 17,444 tested GO-annotated genes; terms pass FDR < 0.05 in both a "
-         "hypergeometric and an expression-matched permutation test. No retina\n"
-         "term was enriched among down-regulated genes (22 tested, best FDR = 0.11), "
-         "so only the up direction is shown.",
+         "Restricted to the eye/vision part of the GO DAG (22 curated roots and "
+         "their descendants),\nso membership follows the ontology, not the wording "
+         "of a term name. Over-representation among DESeq2 padj < 0.05 genes, "
+         "against the 17,444 tested GO-annotated genes.\n"
+         "Filled bubbles pass FDR < 0.05 in both a hypergeometric and an "
+         "expression-matched permutation test. No retina term clears that bar among "
+         "down-regulated genes, so that\npanel instead shows its strongest nominal "
+         "candidates (raw p < 0.10, fold enrichment > 1) as hollow bubbles; those "
+         "are not enrichment claims.",
          ha="left", va="top", fontsize=8.8, color=MUTED, linespacing=1.6)
 
 fig.savefig(f"{OUT_BASE}.svg")

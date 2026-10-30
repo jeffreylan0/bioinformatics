@@ -32,6 +32,7 @@ of the retina.
 | Test | one-sided hypergeometric, Benjamini–Hochberg within each ontology and direction |
 | Confound control | expression-matched permutation test (below), 5,000 permutations |
 | Scope | the figure is restricted to retina/vision GO terms (see below); the enrichment itself is run genome-wide |
+| Display fallback | a direction with no term at FDR < 0.05 shows nominal candidates (p < 0.10, fold enrichment > 1) as hollow bubbles |
 | Redundancy | a term is dropped if its DE genes are > 50 % Jaccard-similar to an already-selected stronger term |
 | Figure | top 8 biological-process and top 5 cellular-component terms per direction; molecular function is computed but not plotted |
 
@@ -57,7 +58,17 @@ ear, nose and lateral line.
 **The result is one-sided.** Retina terms were tested in both directions (22
 down, 29 up), but none reached significance among down-regulated genes — the
 best is retinoid metabolic process at raw p = 0.017, FDR = 0.11. All 19
-significant retina terms are up in the cKO, so the figure has a single panel.
+significant retina terms are up in the cKO.
+
+Both directions are still drawn, because an absent panel cannot distinguish
+"tested and found nothing" from "never tested". A direction with no term at
+FDR < 0.05 instead shows its strongest nominal candidates (raw p < 0.10 and
+fold enrichment > 1) as **hollow grey bubbles**, which are not enrichment
+claims. Colour is normalised over the significant terms only, so a pale bubble
+never has to double as "not significant". The down panel's cellular-component
+band is empty and labelled as such: its three retina CC terms are *depleted*
+rather than enriched (fold enrichment 0.73–0.95), so none clears even the
+nominal bar.
 
 ### Why the redundancy metric is Jaccard, not the overlap coefficient
 
