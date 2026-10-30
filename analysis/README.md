@@ -95,11 +95,17 @@ highly) expressed. `expression_matched_test.py` rebuilds the null by drawing bac
 gene sets that match the DE set's baseMean-decile distribution, and reports an empirical
 p-value and FDR. The plotted terms must pass **both** tests at FDR < 0.05.
 
-This matters: 310/390 "down" and 179/235 "up" terms survive, but the ones that fail are
-not random. Every down-regulated *immune* term (immune effector process, adaptive immune
-response, …) fails expression matching, while the up-regulated type I interferon,
-complement and inflammasome terms survive — i.e. the real immune signal in this dataset
-points **up**, and the plain test would have shown it in both directions.
+This matters. Of the terms the hypergeometric test calls significant, 169/390 "down"
+and 96/235 "up" also clear the expression-matched test — so matching removes well over
+half of the down-regulated hits. (The expression-matched test taken on its own flags 310
+down and 179 up terms across everything tested, but those are not the same terms, and
+the figure requires both.)
+
+The terms that fail are not random. Every down-regulated *immune* term (immune effector
+process, adaptive immune response, …) fails expression matching, while the up-regulated
+type I interferon, complement and inflammasome terms survive — i.e. the real immune
+signal in this dataset points **up**, and the plain test would have shown it in both
+directions.
 
 ## Files
 
