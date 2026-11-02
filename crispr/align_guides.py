@@ -105,6 +105,17 @@ truncated = sum(1 for r in records if len(r["PAM"]) != 3)
 if truncated:
     print(f"WARNING {truncated} hits still lack a full PAM context",
           file=sys.stderr)
+
+# The genome scan is the expensive half, so persist it before touching the GTF;
+# an annotation failure should never cost a rescan.
+hits.to_csv(f"{OUT}_raw_hits.tsv", sep="\t", index=False)
+print(f"wrote {OUT}_raw_hits.tsv", file=sys.stderr)
+
+unmapped = sorted(set(sp["name"]) - set(hits["name"]))
+pd.Series(unmapped, name="name").to_csv(f"{OUT}_unmapped.txt", index=False,
+                                        header=False)
+print(f"{len(unmapped)} spacers with no genomic match -> {OUT}_unmapped.txt",
+      file=sys.stderr)
 print(f"{len(hits)} genomic matches for {hits['name'].nunique() if len(hits) else 0} "
       f"of {len(sp)} spacers", file=sys.stderr)
 
