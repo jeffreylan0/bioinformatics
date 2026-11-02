@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """
-Map 20 nt sgRNA spacers to the genome by exact match, on both strands, and
-report every hit with its PAM and the gene it falls in.
+Map 20 nt sgRNA spacers to the genome and report every hit with its PAM and the
+gene it falls in.
 
-Exact matching rather than a mismatch-tolerant aligner: a guide is expected to
-match its intended target perfectly, and at 20 nt an exact search over both
-strands is both complete and unambiguous. All hits are kept, so a guide that
+The search is on positions 2-20, not the full 20 nt. U6 needs a G at the
+transcription start, and this library gets one by SUBSTITUTING the first base
+of the spacer rather than prepending a base: at the Rpl10 locus the genome
+reads TCTGGCGCGGTGAGTGAGTT where the oligo carries GCTGGCGCGGTGAGTGAGTT. An
+exact 20 nt search therefore misses every guide whose target does not already
+begin with G - two thirds of this library. Searching the trailing 19 nt and
+recovering the real 5' base from the genome finds them, and the substitution is
+reported per hit so a genuine G-start can be told from a substituted one.
+
+A 19 nt query is still highly specific: about 0.02 occurrences expected by
+chance in a 2.7 Gb genome over both strands. All hits are kept, so a guide that
 matches more than one locus is visible instead of being assigned arbitrarily.
 
 The Cas9 PAM is checked but never used to filter: a 20 nt match with no NGG
@@ -35,14 +43,15 @@ def rc(s):
 # ------------------------------------------------------------ patterns -------
 sp = pd.read_csv(SPACERS, sep="\t")
 auto = ahocorasick.Automaton()
-pat = defaultdict(list)                      # sequence -> [(name, strand), ...]
+pat = defaultdict(list)          # 19 nt query -> [(name, full spacer, strand)]
 for name, spacer in zip(sp["name"], sp.spacer):
-    pat[spacer].append((name, "+"))
-    pat[rc(spacer)].append((name, "-"))
+    q = spacer[1:]                               # drop the possibly substituted base
+    pat[q].append((name, spacer, "+"))
+    pat[rc(q)].append((name, spacer, "-"))
 for seq, hits in pat.items():
     auto.add_word(seq, (seq, hits))
 auto.make_automaton()
-print(f"{len(sp)} spacers -> {len(pat)} search patterns (both strands)",
+print(f"{len(sp)} spacers -> {len(pat)} search patterns of 19 nt (both strands)",
       file=sys.stderr)
 
 
@@ -84,18 +93,31 @@ def flush(chrom, buf, base, final=False):
 # chunk happened to report it first.
 best = {}
 for chrom, gpos, seq, hits_, buf, local in scan(GENOME):
-    for name, strand in hits_:
+    for name, spacer, strand in hits_:
         if strand == "+":
-            pam = buf[local + 20:local + 23]
+            # 19 nt query sits at [local, local+19); the real 5' base precedes it
+            if local < 1 or local + 19 + 3 > len(buf):
+                continue
+            proto = buf[local - 1:local + 19]
+            pam = buf[local + 19:local + 22]
+            start = gpos - 1
         else:
-            pam = rc(buf[max(local - 3, 0):local])
-        key = (chrom, gpos, seq, name, strand)
+            # rc(query) sits at [local, local+19); the 5' base follows it
+            if local + 20 > len(buf) or local < 3:
+                continue
+            proto = rc(buf[local:local + 20])
+            pam = rc(buf[local - 3:local])
+            start = gpos
+        if len(proto) != 20 or "N" in proto:
+            continue
+        key = (chrom, start, strand, name)
         prev = best.get(key)
         if prev is not None and len(prev["PAM"]) >= len(pam):
             continue
-        best[key] = {"name": name, "chrom": chrom, "start": gpos + 1,
-                     "end": gpos + 20, "strand": strand,
-                     "spacer": seq if strand == "+" else rc(seq),
+        best[key] = {"name": name, "chrom": chrom, "start": start + 1,
+                     "end": start + 20, "strand": strand,
+                     "spacer": spacer, "protospacer": proto,
+                     "g_substituted": int(proto[0] != spacer[0]),
                      "PAM": pam,
                      "PAM_ok": int(len(pam) == 3 and pam[1:] == "GG")}
 
@@ -118,6 +140,12 @@ print(f"{len(unmapped)} spacers with no genomic match -> {OUT}_unmapped.txt",
       file=sys.stderr)
 print(f"{len(hits)} genomic matches for {hits['name'].nunique() if len(hits) else 0} "
       f"of {len(sp)} spacers", file=sys.stderr)
+if len(hits):
+    ok = hits[hits.PAM_ok == 1]
+    print(f"  with a canonical NGG PAM: {len(ok)} hits, "
+          f"{ok['name'].nunique()} spacers", file=sys.stderr)
+    print(f"  5' base substituted to G: {int(hits.g_substituted.sum())} hits",
+          file=sys.stderr)
 
 
 # --------------------------------------------------------- annotation --------
@@ -187,6 +215,8 @@ def collapse(g):
         "loci": ";".join(f"{r.chrom}:{r.start}-{r.end}({r.strand})"
                          for r in g.itertuples()),
         "PAM": ";".join(sorted(set(g.PAM))),
+        "protospacer": ";".join(sorted(set(g.protospacer))),
+        "g_substituted": int(g.g_substituted.max()),
     })
 
 
