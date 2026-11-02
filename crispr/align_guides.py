@@ -78,24 +78,33 @@ def flush(chrom, buf, base, final=False):
         yield chrom, base + start, seq, hits, buf, start
 
 
-records = []
-seen = set()
-for chrom, gpos, seq, hits, buf, local in scan(GENOME):
-    key = (chrom, gpos, seq)
-    if key in seen:
-        continue
-    seen.add(key)
-    for name, strand in hits:
+# Chunks overlap by PAD, so a match near a boundary is seen twice: once with
+# its PAM context truncated by the chunk edge and once complete. Deduplicate on
+# the locus and keep the copy that has a full 3 nt PAM, rather than whichever
+# chunk happened to report it first.
+best = {}
+for chrom, gpos, seq, hits_, buf, local in scan(GENOME):
+    for name, strand in hits_:
         if strand == "+":
             pam = buf[local + 20:local + 23]
         else:
             pam = rc(buf[max(local - 3, 0):local])
-        records.append({"name": name, "chrom": chrom, "start": gpos + 1,
-                        "end": gpos + 20, "strand": strand, "spacer": seq
-                        if strand == "+" else rc(seq), "PAM": pam,
-                        "PAM_ok": int(len(pam) == 3 and pam[1:] == "GG")})
+        key = (chrom, gpos, seq, name, strand)
+        prev = best.get(key)
+        if prev is not None and len(prev["PAM"]) >= len(pam):
+            continue
+        best[key] = {"name": name, "chrom": chrom, "start": gpos + 1,
+                     "end": gpos + 20, "strand": strand,
+                     "spacer": seq if strand == "+" else rc(seq),
+                     "PAM": pam,
+                     "PAM_ok": int(len(pam) == 3 and pam[1:] == "GG")}
 
+records = list(best.values())
 hits = pd.DataFrame(records)
+truncated = sum(1 for r in records if len(r["PAM"]) != 3)
+if truncated:
+    print(f"WARNING {truncated} hits still lack a full PAM context",
+          file=sys.stderr)
 print(f"{len(hits)} genomic matches for {hits['name'].nunique() if len(hits) else 0} "
       f"of {len(sp)} spacers", file=sys.stderr)
 
