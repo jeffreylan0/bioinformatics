@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Pull 20 bp spacers out of oligo sequences in a spreadsheet.
+Pull 20 nt sgRNA spacers out of full-length oligos in a spreadsheet.
 
-Layout-agnostic on purpose: every cell of every sheet is scanned for the U6
-sgRNA context, so the script does not care which column the oligos sit in.
+Construct in this library:
 
-    ...TATATATCTTGTGGAAAGGACGAAACACC [ G? ] NNNNNNNNNNNNNNNNNNNN GTTT...
+    ...CACTTGCTCGTACGACGTATCTTGTGGAAAGGACGAAACACC [G?] <20 nt spacer>
+    GTTTAAGAGCTATGCTGGAAACAGCATAGCAAG...   (modified sgRNA scaffold)
 
-The vector usually carries a transcription-start G between the 5' flank and the
-spacer, so the captured insert is 20 or 21 nt. The script does not assume which:
-it records the raw insert and its length, trims a leading G only when the insert
-is 21 nt, and prints the length distribution so the call is made on the data.
+The U6 promoter needs a G at the transcription start, so an oligo whose spacer
+does not already begin with G carries an extra one. The insert between the 5'
+constant and the scaffold is therefore 20 or 21 nt. Matching is greedy over
+{20,21}: a 21 nt match is only possible when the extra G is really there,
+because a 20 nt match would leave "TTTAAGAGC..." rather than "GTTTAAGAGC..."
+where the scaffold is expected. The spacer is then the 20 nt immediately
+preceding the scaffold, which is correct either way.
 
 Usage: extract_guides.py INPUT.xlsx OUT.tsv
 """
@@ -22,53 +25,50 @@ import pandas as pd
 
 IN, OUT = sys.argv[1], sys.argv[2]
 
-FLANK5 = "TATATATCTTGTGGAAAGGACGAAACACC"
-FLANK3 = "GTTT"
-# capture everything between the flanks, 18-22 nt, so a wrong-length oligo is
-# surfaced rather than silently skipped
-PAT = re.compile(FLANK5 + r"([ACGT]{18,22}?)" + FLANK3, re.I)
+FLANK5 = "GGAAAGGACGAAACACC"
+SCAFFOLD = "GTTTAAGAGCTATGCTGG"
+PAT = re.compile(FLANK5 + r"([ACGT]{20,21})" + SCAFFOLD)
 DNA_ONLY = re.compile(r"^[ACGTNacgtn]+$")
 
 sheets = pd.read_excel(IN, sheet_name=None, header=None, dtype=str)
-rows, scanned, dna_cells = [], 0, 0
+rows, unmatched = [], []
 for sheet, df in sheets.items():
     for r in range(df.shape[0]):
-        for c in range(df.shape[1]):
-            v = df.iat[r, c]
-            if not isinstance(v, str):
-                continue
-            scanned += 1
-            s = v.strip().replace(" ", "").replace("\n", "")
-            if DNA_ONLY.match(s):
-                dna_cells += 1
+        cells = [df.iat[r, c] for c in range(df.shape[1])]
+        text = [str(v).strip() for v in cells if isinstance(v, str) and str(v).strip()]
+        seqs = [t.replace(" ", "").replace("\n", "").upper()
+                for t in text if DNA_ONLY.match(t.replace(" ", "").replace("\n", ""))]
+        if not seqs:
+            continue
+        label = next((t for t in text
+                      if not DNA_ONLY.match(t.replace(" ", ""))), "")
+        for s in seqs:
             m = PAT.search(s)
             if not m:
+                unmatched.append((sheet, r + 1, label, s[:60]))
                 continue
-            insert = m.group(1).upper()
-            spacer = insert[1:] if len(insert) == 21 and insert[0] == "G" else insert
-            # the label is usually the first non-sequence cell on the same row
-            label = ""
-            for cc in range(df.shape[1]):
-                o = df.iat[r, cc]
-                if isinstance(o, str) and o.strip() and not DNA_ONLY.match(
-                        o.strip().replace(" ", "")):
-                    label = o.strip()
-                    break
-            rows.append({"sheet": sheet, "row": r + 1, "col": c + 1,
-                         "label": label, "insert": insert,
-                         "insert_len": len(insert), "spacer": spacer,
-                         "spacer_len": len(spacer), "oligo": s})
+            insert = m.group(1)
+            rows.append({
+                "sheet": sheet, "row": r + 1, "name": label,
+                "insert": insert, "insert_len": len(insert),
+                "extra_G": int(len(insert) == 21),
+                "spacer": insert[-20:], "oligo_len": len(s),
+            })
 
 if not rows:
-    sys.exit(f"no oligo matched the expected context in {IN}\n"
-             f"  cells scanned: {scanned}, pure-DNA cells: {dna_cells}\n"
-             f"  expected: {FLANK5} [G?] <20 nt> {FLANK3}...")
+    sys.exit(f"no oligo matched {FLANK5} [G?] <20 nt> {SCAFFOLD} in {IN}")
 
 out = pd.DataFrame(rows)
-print("insert length distribution:", dict(Counter(out.insert_len)), file=sys.stderr)
-print("spacer length distribution:", dict(Counter(out.spacer_len)), file=sys.stderr)
-dups = out.spacer.duplicated(keep=False)
-print(f"{len(out)} oligos matched; {out.spacer.nunique()} unique spacers; "
-      f"{int(dups.sum())} rows share a spacer", file=sys.stderr)
+print(f"matched {len(out)} oligos; {len(unmatched)} unmatched", file=sys.stderr)
+print("insert length:", dict(Counter(out.insert_len)), file=sys.stderr)
+print(f"spacers: {out.spacer.nunique()} unique of {len(out)}", file=sys.stderr)
+print("first base of spacer:", dict(Counter(out.spacer.str[0])), file=sys.stderr)
+if unmatched:
+    for u in unmatched[:5]:
+        print("  UNMATCHED", u, file=sys.stderr)
+dup = out[out.spacer.duplicated(keep=False)]
+if len(dup):
+    print(f"NOTE {len(dup)} oligos share a spacer with another oligo",
+          file=sys.stderr)
 out.to_csv(OUT, sep="\t", index=False)
 print(f"wrote {OUT}", file=sys.stderr)
